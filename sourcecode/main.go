@@ -3,6 +3,8 @@ package main
 import (
 	logger "github.com/rs/zerolog/log"
 	"io"
+	v1 "k8s.io/api/apps/v1"
+	v12 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"net/http"
@@ -21,8 +23,6 @@ import (
 	"k8s.io/api/admission/v1beta1"
 
 	"encoding/json"
-	apiv1 "k8s.io/api/core/v1"
-
 	"github.com/rs/zerolog"
 )
 
@@ -141,24 +141,56 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 		admissionReviewReq.Request.Name,
 	)
 
-	var pod apiv1.Pod
+	//var pod apiv1.Pod
+	var deployment v1.Deployment
 
-	err = json.Unmarshal(admissionReviewReq.Request.Object.Raw, &pod)
-
+	err = json.Unmarshal(admissionReviewReq.Request.Object.Raw, &deployment)
 	if err != nil {
 		logger.Error().Msgf("could not unmarshal pod on admission request: %v", err)
 	}
 
 	var patches []patchOperation
+	labels := deployment.Spec.Template.Labels
+	annotations := deployment.Spec.Template.Annotations
+	envFrom := v12.EnvFromSource{}
 
-	labels := pod.ObjectMeta.Labels
-	labels["example-webhook"] = "it-worked"
+	for name, _ := range deployment.Spec.Template.Labels {
+		if name == "notebook-name" {
 
-	patches = append(patches, patchOperation{
-		Op:    "add",
-		Path:  "/metadata/labels",
-		Value: labels,
-	})
+			labels["type-app"] = "notebook"
+			patches = append(patches, patchOperation{
+				Op:    "add",
+				Path:  "/spec/template/metadata/labels",
+				Value: labels,
+			})
+
+			annotations["sidecar.istio.io/componentLogLevel"] = "wasm:debug"
+			annotations["sidecar.istio.io/userVolume"] = "[{\"name\":\"wasmfilters-dir\",\"emptyDir\": {}}]"
+			annotations["sidecar.istio.io/userVolumeMount"] = "[{\"mountPath\":\"/var/local/lib/wasm-filters\",\"name\":\"wasmfilters-dir\"}]"
+			patches = append(patches, patchOperation{
+				Op:    "add",
+				Path:  "/spec/template/metadata/annotations",
+				Value: annotations,
+			})
+
+			for i, container := range deployment.Spec.Template.Spec.Containers {
+				if container.EnvFrom != nil {
+					logger.Info().Msgf("envFrom in container %v exist", container.Name)
+				} else {
+
+					envFrom.SecretRef.Name = string(rune(i)) // TODO
+
+					patches = append(patches, patchOperation{
+						Op:    "add",
+						Path:  "/spec/template/spec/containers/", // TODO
+						Value: envFrom,
+					})
+				}
+			}
+
+			break
+		}
+	}
 
 	patchBytes, err := json.Marshal(patches)
 
