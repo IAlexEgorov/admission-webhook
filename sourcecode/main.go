@@ -7,7 +7,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"net/http"
 
-	"fmt"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -65,8 +64,9 @@ func main() {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	case "debug":
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
 	if len(useKubeConfig) == 0 {
 		// default to service account in cluster token
@@ -113,9 +113,9 @@ func main() {
 func HandleMutate(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(r.Body)
-	bodyString := string(body[:])
+	logger.Debug().Msg(string(body[:]))
+	logger.Debug().Msg("Writing request in /tmp/request")
 
-	fmt.Print(bodyString)
 	err = os.WriteFile("/tmp/request", body, 0644)
 	if err != nil {
 		panic(err.Error())
@@ -125,16 +125,17 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 
 	if _, _, err := universalDeserializer.Decode(body, nil, &admissionReviewReq); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = fmt.Errorf("could not deserialize request: %v", err)
+		logger.Error().Msgf("could not deserialize request: %v", err)
 	} else if admissionReviewReq.Request == nil {
 		w.WriteHeader(http.StatusBadRequest)
+		logger.Error().Msg("malformed admission review: request is nil")
 		err := errors.New("malformed admission review: request is nil")
 		if err != nil {
 			return
 		}
 	}
 
-	fmt.Printf("Type: %v \t Event: %v \t Name: %v \n",
+	logger.Info().Msgf("Type: %v \t Event: %v \t Name: %v \n",
 		admissionReviewReq.Request.Kind,
 		admissionReviewReq.Request.Operation,
 		admissionReviewReq.Request.Name,
@@ -145,7 +146,7 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 	err = json.Unmarshal(admissionReviewReq.Request.Object.Raw, &pod)
 
 	if err != nil {
-		_ = fmt.Errorf("could not unmarshal pod on admission request: %v", err)
+		logger.Error().Msgf("could not unmarshal pod on admission request: %v", err)
 	}
 
 	var patches []patchOperation
@@ -162,7 +163,7 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 	patchBytes, err := json.Marshal(patches)
 
 	if err != nil {
-		_ = fmt.Errorf("could not marshal JSON patch: %v", err)
+		logger.Error().Msgf("could not marshal JSON patch: %v", err)
 	}
 
 	admissionReviewResponse := v1beta1.AdmissionReview{
@@ -176,7 +177,7 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 
 	bytes, err := json.Marshal(&admissionReviewResponse)
 	if err != nil {
-		_ = fmt.Errorf("marshaling response: %v", err)
+		logger.Error().Msgf("marshaling response: %v", err)
 	}
 
 	_, err = w.Write(bytes)
