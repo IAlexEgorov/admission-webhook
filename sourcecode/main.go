@@ -1,10 +1,10 @@
 package main
 
 import (
+	logger "github.com/rs/zerolog/log"
 	"io"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"log"
 	"net/http"
 
 	"fmt"
@@ -23,12 +23,15 @@ import (
 
 	"encoding/json"
 	apiv1 "k8s.io/api/core/v1"
+
+	"github.com/rs/zerolog"
 )
 
 type ServerParameters struct {
 	port     int    // webhook server port
 	certFile string // path to the x509 certificate for https
 	keyFile  string // path to the x509 private key matching `CertFile`
+	logLevel string // level of logging
 }
 
 type patchOperation struct {
@@ -54,7 +57,16 @@ func main() {
 	flag.IntVar(&parameters.port, "port", 8443, "Webhook server port.")
 	flag.StringVar(&parameters.certFile, "tlsCertFile", "/etc/webhook/certs/tls.crt", "File containing the x509 Certificate for HTTPS.")
 	flag.StringVar(&parameters.keyFile, "tlsKeyFile", "/etc/webhook/certs/tls.key", "File containing the x509 private key to --tlsCertFile.")
+	flag.StringVar(&parameters.logLevel, "logLevel", "info", "Specify level of logging.")
 	flag.Parse()
+
+	switch parameters.logLevel {
+	case "info":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	}
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
 	if len(useKubeConfig) == 0 {
 		// default to service account in cluster token
@@ -75,7 +87,7 @@ func main() {
 			kubeconfig = kubeConfigFilePath
 		}
 
-		fmt.Println("kubeconfig: " + kubeconfig)
+		logger.Debug().Msg("kubeconfig: " + kubeconfig)
 
 		c, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 		if err != nil {
@@ -90,22 +102,20 @@ func main() {
 	}
 	clientSet = cs
 
-	test()
-	http.HandleFunc("/", HandleRoot)
-	http.HandleFunc("/mutate", HandleMutate)
-	log.Fatal(http.ListenAndServeTLS(":"+strconv.Itoa(parameters.port), parameters.certFile, parameters.keyFile, nil))
-}
+	logger.Info().Msgf("Starting of API server... \n  Port: %v \t CertFile: %v \t KeyFile: %v \n",
+		parameters.port, parameters.certFile, parameters.keyFile)
 
-func HandleRoot(w http.ResponseWriter, _ *http.Request) {
-	_, err := w.Write([]byte("HandleRoot!"))
-	if err != nil {
-		return
-	}
+	http.HandleFunc("/mutate/deployments", HandleMutate)
+	err = http.ListenAndServeTLS(":"+strconv.Itoa(parameters.port), parameters.certFile, parameters.keyFile, nil)
+	logger.Error().Msg(err.Error())
 }
 
 func HandleMutate(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(r.Body)
+	bodyString := string(body[:])
+
+	fmt.Print(bodyString)
 	err = os.WriteFile("/tmp/request", body, 0644)
 	if err != nil {
 		panic(err.Error())
