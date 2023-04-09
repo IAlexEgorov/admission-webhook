@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-webhook
+  namespace: default
+  labels:
+    app: example-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: example-webhook
+  template:
+    metadata:
+      labels:
+        app: example-webhook
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      serviceAccountName: example-webhook
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1234
+      containers:
+      - name: server
+        image: 89109249948/example-webhook:v2
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8443
+          name: tls
+        - containerPort: 80
+          name: metrics
+        volumeMounts:
+        - name: webhook-tls-certs
+          mountPath: /etc/webhook/certs/
+          readOnly: true
+      volumes:
+      - name: webhook-tls-certs
+        secret:
+          secretName: example-webhook-tls
