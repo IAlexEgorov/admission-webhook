@@ -7,12 +7,11 @@ import (
 	v12 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"net/http"
-
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -149,48 +148,7 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 		logger.Error().Msgf("could not unmarshal pod on admission request: %v", err)
 	}
 
-	var patches []patchOperation
-	labels := deployment.Spec.Template.Labels
-	annotations := deployment.Spec.Template.Annotations
-	envFrom := v12.EnvFromSource{}
-
-	for name, _ := range deployment.Spec.Template.Labels {
-		if name == "notebook-name" {
-
-			labels["type-app"] = "notebook"
-			patches = append(patches, patchOperation{
-				Op:    "add",
-				Path:  "/spec/template/metadata/labels",
-				Value: labels,
-			})
-
-			annotations["sidecar.istio.io/componentLogLevel"] = "wasm:debug"
-			annotations["sidecar.istio.io/userVolume"] = "[{\"name\":\"wasmfilters-dir\",\"emptyDir\": {}}]"
-			annotations["sidecar.istio.io/userVolumeMount"] = "[{\"mountPath\":\"/var/local/lib/wasm-filters\",\"name\":\"wasmfilters-dir\"}]"
-			patches = append(patches, patchOperation{
-				Op:    "add",
-				Path:  "/spec/template/metadata/annotations",
-				Value: annotations,
-			})
-
-			for i, container := range deployment.Spec.Template.Spec.Containers {
-				if container.EnvFrom != nil {
-					logger.Info().Msgf("envFrom in container %v exist", container.Name)
-				} else {
-
-					envFrom.SecretRef.Name = string(rune(i)) // TODO
-
-					patches = append(patches, patchOperation{
-						Op:    "add",
-						Path:  "/spec/template/spec/containers/", // TODO
-						Value: envFrom,
-					})
-				}
-			}
-
-			break
-		}
-	}
+	var patches []patchOperation = createPatch(&deployment)
 
 	patchBytes, err := json.Marshal(patches)
 
@@ -217,4 +175,101 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+}
+
+func createPatch(deployment *v1.Deployment) []patchOperation {
+	var patches []patchOperation
+	var labels map[string]string = make(map[string]string)
+	var annotations map[string]string = make(map[string]string)
+
+	envFrom := v12.EnvFromSource{
+		SecretRef: &v12.SecretEnvSource{
+			LocalObjectReference: v12.LocalObjectReference{
+				Name: "secret",
+			},
+			Optional: nil,
+		},
+	}
+	livecycle := v12.Lifecycle{
+		PostStart: &v12.Handler{
+			Exec: &v12.ExecAction{
+				Command: []string{"/bin/sh", "-c", "ls -la"},
+			},
+		},
+	}
+	volumes := v12.Volume{
+		Name: "wasmfilters-dir",
+		VolumeSource: v12.VolumeSource{
+			EmptyDir: &v12.EmptyDirVolumeSource{},
+		},
+	}
+
+	initContainerVolumeMount := v12.VolumeMount{
+		Name:      "wasmfilters-dir",
+		MountPath: "/var/local/lib/wasm-filters",
+	}
+	initContainers := v12.Container{
+		Name:         "mlflow-tracking-webassembly",
+		Image:        "nexus.do.neoflex.ru/webassembly:1.0.2",
+		Command:      []string{"sh", "-c", "cp /plugin.wasm /var/local/lib/wasm-filters/oidc.wasm"},
+		VolumeMounts: []v12.VolumeMount{initContainerVolumeMount},
+	}
+
+	for name, _ := range deployment.Spec.Template.ObjectMeta.Labels {
+		if name == "notebook-name" {
+
+			labels["type-app"] = "notebook"
+			patches = append(patches, patchOperation{
+				Op:    "add",
+				Path:  "/spec/template/metadata/labels",
+				Value: labels,
+			})
+
+			annotations["sidecar.istio.io/componentLogLevel"] = "wasm:debug"
+			annotations["sidecar.istio.io/userVolume"] = "[{\"name\":\"wasmfilters-dir\",\"emptyDir\": {}}]"
+			annotations["sidecar.istio.io/userVolumeMount"] = "[{\"mountPath\":\"/var/local/lib/wasm-filters\",\"name\":\"wasmfilters-dir\"}]"
+			patches = append(patches, patchOperation{
+				Op:    "add",
+				Path:  "/spec/template/metadata/annotations",
+				Value: annotations,
+			})
+
+			for i, container := range deployment.Spec.Template.Spec.Containers {
+				if container.EnvFrom != nil {
+					logger.Info().Msgf("envFrom in container %v exist", container.Name)
+				} else {
+					patches = append(patches, patchOperation{
+						Op:    "add",
+						Path:  "/spec/template/spec/containers/" + string(i) + "/envFrom",
+						Value: envFrom,
+					})
+				}
+				if container.Lifecycle != nil {
+					logger.Info().Msgf("livecycle in container %v exist", container.Name)
+				} else {
+					patches = append(patches, patchOperation{
+						Op:    "add",
+						Path:  "/spec/template/spec/containers/" + string(i) + "/lifecycle",
+						Value: livecycle,
+					})
+				}
+			}
+
+			patches = append(patches, patchOperation{
+				Op:    "add",
+				Path:  "/spec/template/spec/volumes",
+				Value: volumes,
+			})
+
+			patches = append(patches, patchOperation{
+				Op:    "add",
+				Path:  "/spec/template/spec/initContainers",
+				Value: []v12.Container{initContainers},
+			})
+
+			break
+		}
+	}
+
+	return patches
 }
