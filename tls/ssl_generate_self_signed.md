@@ -22,20 +22,20 @@ cfssl gencert \
   -ca=/tmp/ca.pem \
   -ca-key=/tmp/ca-key.pem \
   -config=./tls/ca-config.json \
-  -hostname="example-webhook,example-webhook.default.svc.cluster.local,example-webhook.default.svc,localhost,127.0.0.1" \
+  -hostname="aegorov-admission,aegorov-admission.default.cluster.local,aegorov-admission.default.svc,localhost,127.0.0.1" \
   -profile=default \
-  ./tls/ca-csr.json | cfssljson -bare /tmp/example-webhook
+  ./tls/ca-csr.json | cfssljson -bare /tmp/aegorov-admission
 
 #make a secret
-cat <<EOF > ./tls/example-webhook-tls.yaml
+cat <<EOF > ./custom-webhook/templates/aegorov-admission-tls.yaml
 apiVersion: v1
 kind: Secret
 metadata:
-  name: example-webhook-tls
+  name: aegorov-admission-tls
 type: Opaque
 data:
-  tls.crt: $(cat /tmp/example-webhook.pem | base64 | tr -d '\n')
-  tls.key: $(cat /tmp/example-webhook-key.pem | base64 | tr -d '\n') 
+  tls.crt: $(cat /tmp/aegorov-admission.pem | base64 | tr -d '\n')
+  tls.key: $(cat /tmp/aegorov-admission-key.pem | base64 | tr -d '\n') 
 EOF
 
 #generate CA Bundle + inject into template
