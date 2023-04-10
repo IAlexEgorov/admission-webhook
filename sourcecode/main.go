@@ -148,7 +148,7 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 		logger.Error().Msgf("could not unmarshal pod on admission request: %v", err)
 	}
 
-	var patches []patchOperation = createPatch(&deployment)
+	patches := createPatch(&deployment)
 
 	patchBytes, err := json.Marshal(patches)
 
@@ -179,8 +179,8 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 
 func createPatch(deployment *v1.Deployment) []patchOperation {
 	var patches []patchOperation
-	var labels map[string]string = make(map[string]string)
-	var annotations map[string]string = make(map[string]string)
+	var labels = make(map[string]string)
+	var annotations = make(map[string]string)
 
 	envFrom := v12.EnvFromSource{
 		SecretRef: &v12.SecretEnvSource{
@@ -215,7 +215,7 @@ func createPatch(deployment *v1.Deployment) []patchOperation {
 		VolumeMounts: []v12.VolumeMount{initContainerVolumeMount},
 	}
 
-	for name, _ := range deployment.Spec.Template.ObjectMeta.Labels {
+	for name := range deployment.Spec.Template.ObjectMeta.Labels {
 		if name == "notebook-name" {
 
 			labels["type-app"] = "notebook"
@@ -240,16 +240,17 @@ func createPatch(deployment *v1.Deployment) []patchOperation {
 				} else {
 					patches = append(patches, patchOperation{
 						Op:    "add",
-						Path:  "/spec/template/spec/containers/" + string(i) + "/envFrom",
-						Value: envFrom,
+						Path:  "/spec/template/spec/containers/" + strconv.Itoa(i) + "/envFrom",
+						Value: []v12.EnvFromSource{envFrom},
 					})
 				}
+
 				if container.Lifecycle != nil {
 					logger.Info().Msgf("livecycle in container %v exist", container.Name)
 				} else {
 					patches = append(patches, patchOperation{
 						Op:    "add",
-						Path:  "/spec/template/spec/containers/" + string(i) + "/lifecycle",
+						Path:  "/spec/template/spec/containers/" + strconv.Itoa(i) + "/lifecycle",
 						Value: livecycle,
 					})
 				}
@@ -258,7 +259,7 @@ func createPatch(deployment *v1.Deployment) []patchOperation {
 			patches = append(patches, patchOperation{
 				Op:    "add",
 				Path:  "/spec/template/spec/volumes",
-				Value: volumes,
+				Value: []v12.Volume{volumes},
 			})
 
 			patches = append(patches, patchOperation{
