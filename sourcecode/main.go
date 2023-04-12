@@ -1,7 +1,10 @@
 package main
 
 import (
+	"flag"
+	"github.com/rs/zerolog"
 	logger "github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v2"
 	"io"
 	v1 "k8s.io/api/apps/v1"
 	v12 "k8s.io/api/core/v1"
@@ -11,31 +14,52 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-
-	"flag"
 	"strconv"
 
-	"errors"
 	"k8s.io/api/admission/v1beta1"
 
 	"encoding/json"
-	"github.com/rs/zerolog"
 )
 
 type ServerParameters struct {
-	port     int    // webhook server port
-	certFile string // path to the x509 certificate for https
-	keyFile  string // path to the x509 private key matching `CertFile`
-	logLevel string // level of logging
+	port              int    // webhook server port
+	certFile          string // path to the x509 certificate for https
+	keyFile           string // path to the x509 private key matching `CertFile`
+	logLevel          string // level of logging
+	programConfigFile string
 }
 
 type patchOperation struct {
 	Op    string      `json:"op"`
 	Path  string      `json:"path"`
 	Value interface{} `json:"value,omitempty"`
+}
+
+type Configuration struct {
+	General struct {
+		Port        int    `yaml:"port"`
+		TLSCertFile string `yaml:"tlsCertFile"`
+		TLSKeyFile  string `yaml:"tlsKeyFile"`
+		LogLevel    string `yaml:"logLevel"`
+	} `yaml:"general"`
+	TriggerLabel []struct {
+		Name  string `yaml:"name"`
+		Value string `yaml:"value"`
+	} `yaml:"triggerLabel"`
+	PatchData struct {
+		Labels []struct {
+			Name  string `yaml:"name"`
+			Value string `yaml:"value"`
+		} `yaml:"labels"`
+		Annotations []struct {
+			Name  string `yaml:"name"`
+			Value string `yaml:"value"`
+		} `yaml:"annotations"`
+	} `yaml:"patchData"`
 }
 
 var parameters ServerParameters
@@ -46,6 +70,7 @@ var (
 
 var config *rest.Config
 var clientSet *kubernetes.Clientset
+var programConfigFile Configuration
 
 func main() {
 
@@ -56,17 +81,119 @@ func main() {
 	flag.StringVar(&parameters.certFile, "tlsCertFile", "/etc/webhook/certs/tls.crt", "File containing the x509 Certificate for HTTPS.")
 	flag.StringVar(&parameters.keyFile, "tlsKeyFile", "/etc/webhook/certs/tls.key", "File containing the x509 private key to --tlsCertFile.")
 	flag.StringVar(&parameters.logLevel, "logLevel", "info", "Specify level of logging.")
+	flag.StringVar(&parameters.programConfigFile, "config-file", "sourcecode/config.yaml", "Opt for the configuration file.")
 	flag.Parse()
 
-	switch parameters.logLevel {
-	case "info":
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	case "debug":
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	default:
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	programConfigFile.isConfigurationFileExist(&parameters.programConfigFile)
+	selectLogLevel(&parameters.logLevel)
+
+	createConfigFile(useKubeConfig, kubeConfigFilePath)
+	logger.Info().Msgf("Starting of API server... \n  Port: %v \t CertFile: %v \t KeyFile: %v \n",
+		parameters.port, parameters.certFile, parameters.keyFile)
+
+	http.HandleFunc("/mutate/deployments", HandleMutate)
+	err := http.ListenAndServeTLS(":"+strconv.Itoa(parameters.port), parameters.certFile, parameters.keyFile, nil)
+	logger.Error().Msg(err.Error())
+}
+
+func HandleMutate(w http.ResponseWriter, r *http.Request) {
+
+	// ----------------------------------
+	// Receiving of the request from API
+	// ----------------------------------
+	body, err := io.ReadAll(r.Body)
+	logger.Debug().Msg(string(body[:]))
+
+	// -------------------------------------------------
+	// Deserialize of JSON from AdmissionReview request
+	// and validation of
+	// -------------------------------------------------
+	var admissionReviewReq v1beta1.AdmissionReview
+
+	if _, _, err := universalDeserializer.Decode(body, nil, &admissionReviewReq); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		logger.Error().Msgf("could not deserialize request: %v", err)
+		return
+	} else if admissionReviewReq.Request == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		logger.Error().Msg("malformed admission review: request is nil")
+		return
+	}
+	logger.Info().Msgf("Type: %v \t Event: %v \t Name: %v \n",
+		admissionReviewReq.Request.Kind,
+		admissionReviewReq.Request.Operation,
+		admissionReviewReq.Request.Name,
+	)
+
+	// -------------------------------------------
+	// Creating Deployment object for parsing and
+	// analyzing before creating patch data
+	// -------------------------------------------
+	var deployment v1.Deployment
+
+	err = json.Unmarshal(admissionReviewReq.Request.Object.Raw, &deployment)
+	if err != nil {
+		logger.Error().Msgf("could not unmarshal pod on admission request: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
 	}
 
+	// ---------------------------------------
+	// Creating of Patch for Admission Review
+	// which will be sent to API server
+	// ---------------------------------------
+	patchBytes, err := json.Marshal(createPatch(&deployment))
+	if err != nil {
+		logger.Error().Msgf("could not marshal JSON patch: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+	}
+
+	admissionReviewResponse := v1beta1.AdmissionReview{
+		Response: &v1beta1.AdmissionResponse{
+			UID:     admissionReviewReq.Request.UID,
+			Allowed: true,
+		},
+	}
+	admissionReviewResponse.Response.Patch = patchBytes
+
+	bytes, err := json.Marshal(&admissionReviewResponse)
+	if err != nil {
+		logger.Error().Msgf("Marshaling response: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+	}
+
+	_, err = w.Write(bytes)
+	if err != nil {
+		logger.Error().Msgf("Can't send response. Error: '%v'", err)
+		return
+	}
+
+}
+
+func (c *Configuration) isConfigurationFileExist(configFile *string) {
+	if len(*configFile) == 0 {
+		return
+	}
+	yamlFile, err := os.ReadFile(*configFile)
+	if err != nil {
+		logger.Error().Msgf("Config file not found: %v", err.Error())
+		return
+	}
+	err = yaml.Unmarshal(yamlFile, c)
+	if err != nil {
+		log.Fatalf("Unmarshal: %v", err)
+		return
+	}
+
+	parameters = ServerParameters{
+		port:              c.General.Port,
+		certFile:          c.General.TLSCertFile,
+		keyFile:           c.General.TLSKeyFile,
+		logLevel:          c.General.LogLevel,
+		programConfigFile: *configFile,
+	}
+}
+
+func createConfigFile(useKubeConfig string, kubeConfigFilePath string) {
 	if len(useKubeConfig) == 0 {
 		// default to service account in cluster token
 		c, err := rest.InClusterConfig()
@@ -100,81 +227,17 @@ func main() {
 		panic(err.Error())
 	}
 	clientSet = cs
-
-	logger.Info().Msgf("Starting of API server... \n  Port: %v \t CertFile: %v \t KeyFile: %v \n",
-		parameters.port, parameters.certFile, parameters.keyFile)
-
-	http.HandleFunc("/mutate/deployments", HandleMutate)
-	err = http.ListenAndServeTLS(":"+strconv.Itoa(parameters.port), parameters.certFile, parameters.keyFile, nil)
-	logger.Error().Msg(err.Error())
 }
 
-func HandleMutate(w http.ResponseWriter, r *http.Request) {
-
-	body, err := io.ReadAll(r.Body)
-	logger.Debug().Msg(string(body[:]))
-	logger.Debug().Msg("Writing request in /tmp/request")
-
-	err = os.WriteFile("/tmp/request", body, 0644)
-	if err != nil {
-		panic(err.Error())
+func selectLogLevel(logLevel *string) {
+	switch *logLevel {
+	case "info":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
-
-	var admissionReviewReq v1beta1.AdmissionReview
-
-	if _, _, err := universalDeserializer.Decode(body, nil, &admissionReviewReq); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		logger.Error().Msgf("could not deserialize request: %v", err)
-	} else if admissionReviewReq.Request == nil {
-		w.WriteHeader(http.StatusBadRequest)
-		logger.Error().Msg("malformed admission review: request is nil")
-		err := errors.New("malformed admission review: request is nil")
-		if err != nil {
-			return
-		}
-	}
-
-	logger.Info().Msgf("Type: %v \t Event: %v \t Name: %v \n",
-		admissionReviewReq.Request.Kind,
-		admissionReviewReq.Request.Operation,
-		admissionReviewReq.Request.Name,
-	)
-
-	//var pod apiv1.Pod
-	var deployment v1.Deployment
-
-	err = json.Unmarshal(admissionReviewReq.Request.Object.Raw, &deployment)
-	if err != nil {
-		logger.Error().Msgf("could not unmarshal pod on admission request: %v", err)
-	}
-
-	patches := createPatch(&deployment)
-
-	patchBytes, err := json.Marshal(patches)
-
-	if err != nil {
-		logger.Error().Msgf("could not marshal JSON patch: %v", err)
-	}
-
-	admissionReviewResponse := v1beta1.AdmissionReview{
-		Response: &v1beta1.AdmissionResponse{
-			UID:     admissionReviewReq.Request.UID,
-			Allowed: true,
-		},
-	}
-
-	admissionReviewResponse.Response.Patch = patchBytes
-
-	bytes, err := json.Marshal(&admissionReviewResponse)
-	if err != nil {
-		logger.Error().Msgf("marshaling response: %v", err)
-	}
-
-	_, err = w.Write(bytes)
-	if err != nil {
-		return
-	}
-
 }
 
 func createPatch(deployment *v1.Deployment) []patchOperation {

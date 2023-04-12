@@ -1,0 +1,20 @@
+general:
+  port: 8443
+  tlsCertFile: sourcecode/tls.crt
+  tlsKeyFile: sourcecode/tls.key
+  logLevel: info
+triggerLabel:
+  - name: "notebook-name"
+    value: "*"
+patchData:
+  labels:
+    - name: "type-app"
+      value: "notebook"
+  annotations:
+    - name: "sidecar.istio.io/componentLogLevel"
+      value: "wasm:debug"
+    - name: "sidecar.istio.io/userVolume"
+      value: "[{\"name\":\"wasmfilters-dir\",\"emptyDir\": { } } ]"
+    - name: "sidecar.istio.io/userVolumeMount"
+      value: "[{\"mountPath\":\"/var/local/lib/wasm-filters\",\"name\":\"wasmfilters-dir\"}]"
+
