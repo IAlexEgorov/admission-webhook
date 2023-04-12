@@ -1,11 +1,5 @@
 # Introduction to Admission controllers
 
-[Admission Webhook](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#what-are-admission-webhooks)
-
-<a href="https://youtu.be/1mNYSn2KMZk" title="Kubernetes"><img src="https://i.ytimg.com/vi/1mNYSn2KMZk/hqdefault.jpg" width="20%" alt="Kubernetes Admission Controllers" /></a> 
-
-<hr/>
-
 ## Installation (local)
 <hr/>
 
@@ -354,8 +348,8 @@ ENTRYPOINT ["webhook"]
 Let's build the container and push it to a registry:
 
 ```
-docker build . -t aimvector/example-webhook:v1
-docker push aimvector/example-webhook:v1
+docker build . -t example.com/example-webhook:v1
+docker push example.com/example-webhook:v1
 ```
 
 ```
@@ -507,8 +501,8 @@ Add it to the admission response
 # Build and push the updates
 
 ```
-docker build . -t aimvector/example-webhook:v1
-docker push aimvector/example-webhook:v1
+docker build . -t example.com/example-webhook:v1
+docker push example.com/example-webhook:v1
 ```
 
 # Delete all pods to get latest image
