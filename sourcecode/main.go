@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"github.com/rs/zerolog"
 	logger "github.com/rs/zerolog/log"
@@ -46,19 +47,10 @@ type Configuration struct {
 		TLSKeyFile  string `yaml:"tlsKeyFile"`
 		LogLevel    string `yaml:"logLevel"`
 	} `yaml:"general"`
-	TriggerLabel []struct {
-		Name  string `yaml:"name"`
-		Value string `yaml:"value"`
-	} `yaml:"triggerLabel"`
-	PatchData struct {
-		Labels []struct {
-			Name  string `yaml:"name"`
-			Value string `yaml:"value"`
-		} `yaml:"labels"`
-		Annotations []struct {
-			Name  string `yaml:"name"`
-			Value string `yaml:"value"`
-		} `yaml:"annotations"`
+	TriggerLabel map[string]string `yaml:"triggerLabel"`
+	PatchData    struct {
+		Labels      map[string]string `yaml:"labels,omitempty"`
+		Annotations map[string]string `yaml:"annotations,omitempty"`
 	} `yaml:"patchData"`
 }
 
@@ -141,7 +133,11 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 	// Creating of Patch for Admission Review
 	// which will be sent to API server
 	// ---------------------------------------
-	patchBytes, err := json.Marshal(createPatch(&deployment))
+	patches, err := createPatch(&deployment)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+	}
+	patchBytes, err := json.Marshal(patches)
 	if err != nil {
 		logger.Error().Msgf("could not marshal JSON patch: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
@@ -170,6 +166,12 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Configuration) isConfigurationFileExist(configFile *string) {
+
+	//--------------------------------------
+	// Check whether --config-file flag was
+	// appended or now and if it was, we
+	// change global ServerParameters
+	//--------------------------------------
 	if len(*configFile) == 0 {
 		return
 	}
@@ -194,6 +196,15 @@ func (c *Configuration) isConfigurationFileExist(configFile *string) {
 }
 
 func createConfigFile(useKubeConfig string, kubeConfigFilePath string) {
+
+	//---------------------------------------
+	// Check if useKubeConfig was not append
+	// as ENV variable, we get cluster
+	// config by using ServiceAccount of
+	// our Admission Webhook pod.
+	// If it was, we create it from local
+	// kubeconfig path "~/.kube/config"
+	//---------------------------------------
 	if len(useKubeConfig) == 0 {
 		// default to service account in cluster token
 		c, err := rest.InClusterConfig()
@@ -240,100 +251,123 @@ func selectLogLevel(logLevel *string) {
 	}
 }
 
-func createPatch(deployment *v1.Deployment) []patchOperation {
+func createPatch(deployment *v1.Deployment) ([]patchOperation, error) {
+
+	if programConfigFile.TriggerLabel == nil {
+		return nil, errors.New("TriggerLabel is nil")
+	}
+
 	var patches []patchOperation
-	var labels = make(map[string]string)
-	var annotations = make(map[string]string)
 
-	envFrom := v12.EnvFromSource{
-		SecretRef: &v12.SecretEnvSource{
-			LocalObjectReference: v12.LocalObjectReference{
-				Name: "secret",
-			},
-			Optional: nil,
-		},
-	}
-	livecycle := v12.Lifecycle{
-		PostStart: &v12.Handler{
-			Exec: &v12.ExecAction{
-				Command: []string{"/bin/sh", "-c", "ls -la"},
-			},
-		},
-	}
-	volumes := v12.Volume{
-		Name: "wasmfilters-dir",
-		VolumeSource: v12.VolumeSource{
-			EmptyDir: &v12.EmptyDirVolumeSource{},
-		},
-	}
+	for labelName, labelVal := range programConfigFile.TriggerLabel {
+		for deploymentLabelName, deploymentLabelValue := range deployment.Spec.Template.ObjectMeta.Labels {
+			if deploymentLabelName == labelName {
+				if deploymentLabelValue == labelVal || labelVal == "*" {
+					//---------------------
+					// Create patch Labels
+					//---------------------
+					if programConfigFile.PatchData.Labels != nil {
+						patches = append(patches, patchOperation{
+							Op:    "add",
+							Path:  "/spec/template/metadata/labels",
+							Value: programConfigFile.PatchData.Labels,
+						})
+					}
 
-	initContainerVolumeMount := v12.VolumeMount{
-		Name:      "wasmfilters-dir",
-		MountPath: "/var/local/lib/wasm-filters",
-	}
-	initContainers := v12.Container{
-		Name:         "mlflow-tracking-webassembly",
-		Image:        "nexus.do.neoflex.ru/webassembly:1.0.2",
-		Command:      []string{"sh", "-c", "cp /plugin.wasm /var/local/lib/wasm-filters/oidc.wasm"},
-		VolumeMounts: []v12.VolumeMount{initContainerVolumeMount},
-	}
+					//--------------------------
+					// Create patch Annotations
+					//--------------------------
+					if programConfigFile.PatchData.Annotations != nil {
+						patches = append(patches, patchOperation{
+							Op:    "add",
+							Path:  "/spec/template/metadata/annotations",
+							Value: programConfigFile.PatchData.Annotations,
+						})
+					}
 
-	for name := range deployment.Spec.Template.ObjectMeta.Labels {
-		if name == "notebook-name" {
+					//-----------------------------------
+					// Create difficult
+					// patch data: envFrom, livecycle,
+					// volumes, initContainerVolumeMount,
+					// initContainers
+					//-----------------------------------
+					envFrom := v12.EnvFromSource{
+						SecretRef: &v12.SecretEnvSource{
+							LocalObjectReference: v12.LocalObjectReference{
+								Name: "secret",
+							},
+							Optional: nil,
+						},
+					}
+					livecycle := v12.Lifecycle{
+						PostStart: &v12.Handler{
+							Exec: &v12.ExecAction{
+								Command: []string{"/bin/sh", "-c", "ls -la"},
+							},
+						},
+					}
 
-			labels["type-app"] = "notebook"
-			patches = append(patches, patchOperation{
-				Op:    "add",
-				Path:  "/spec/template/metadata/labels",
-				Value: labels,
-			})
+					volumes := v12.Volume{
+						Name: "wasmfilters-dir",
+						VolumeSource: v12.VolumeSource{
+							EmptyDir: &v12.EmptyDirVolumeSource{},
+						},
+					}
 
-			annotations["sidecar.istio.io/componentLogLevel"] = "wasm:debug"
-			annotations["sidecar.istio.io/userVolume"] = "[{\"name\":\"wasmfilters-dir\",\"emptyDir\": {}}]"
-			annotations["sidecar.istio.io/userVolumeMount"] = "[{\"mountPath\":\"/var/local/lib/wasm-filters\",\"name\":\"wasmfilters-dir\"}]"
-			patches = append(patches, patchOperation{
-				Op:    "add",
-				Path:  "/spec/template/metadata/annotations",
-				Value: annotations,
-			})
+					initContainerVolumeMount := v12.VolumeMount{
+						Name:      "wasmfilters-dir",
+						MountPath: "/var/local/lib/wasm-filters",
+					}
+					
+					initContainers := v12.Container{
+						Name:         "mlflow-tracking-webassembly",
+						Image:        "nexus.do.neoflex.ru/webassembly:1.0.2",
+						Command:      []string{"sh", "-c", "cp /plugin.wasm /var/local/lib/wasm-filters/oidc.wasm"},
+						VolumeMounts: []v12.VolumeMount{initContainerVolumeMount},
+					}
 
-			for i, container := range deployment.Spec.Template.Spec.Containers {
-				if container.EnvFrom != nil {
-					logger.Info().Msgf("envFrom in container %v exist", container.Name)
-				} else {
 					patches = append(patches, patchOperation{
 						Op:    "add",
-						Path:  "/spec/template/spec/containers/" + strconv.Itoa(i) + "/envFrom",
-						Value: []v12.EnvFromSource{envFrom},
+						Path:  "/spec/template/spec/volumes",
+						Value: []v12.Volume{volumes},
 					})
-				}
 
-				if container.Lifecycle != nil {
-					logger.Info().Msgf("livecycle in container %v exist", container.Name)
-				} else {
 					patches = append(patches, patchOperation{
 						Op:    "add",
-						Path:  "/spec/template/spec/containers/" + strconv.Itoa(i) + "/lifecycle",
-						Value: livecycle,
+						Path:  "/spec/template/spec/initContainers",
+						Value: []v12.Container{initContainers},
 					})
+
+					//----------------------------
+					// Add difficult patch data
+					// in the specific containers
+					//----------------------------
+					for i, container := range deployment.Spec.Template.Spec.Containers {
+						if container.EnvFrom != nil {
+							logger.Info().Msgf("envFrom in container %v exist", container.Name)
+						} else {
+							patches = append(patches, patchOperation{
+								Op:    "add",
+								Path:  "/spec/template/spec/containers/" + strconv.Itoa(i) + "/envFrom",
+								Value: []v12.EnvFromSource{envFrom},
+							})
+						}
+
+						if container.Lifecycle != nil {
+							logger.Info().Msgf("livecycle in container %v exist", container.Name)
+						} else {
+							patches = append(patches, patchOperation{
+								Op:    "add",
+								Path:  "/spec/template/spec/containers/" + strconv.Itoa(i) + "/lifecycle",
+								Value: livecycle,
+							})
+						}
+					}
+
 				}
 			}
-
-			patches = append(patches, patchOperation{
-				Op:    "add",
-				Path:  "/spec/template/spec/volumes",
-				Value: []v12.Volume{volumes},
-			})
-
-			patches = append(patches, patchOperation{
-				Op:    "add",
-				Path:  "/spec/template/spec/initContainers",
-				Value: []v12.Container{initContainers},
-			})
-
-			break
 		}
 	}
 
-	return patches
+	return patches, nil
 }
