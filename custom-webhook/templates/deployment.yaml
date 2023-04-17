@@ -23,7 +23,8 @@ spec:
         runAsUser: 1234
       containers:
       - name: server
-        image: 89109249948/example-webhook:v2
+        image: 89109249948/webhook:config-version-v1
+        args: ["--config-file", "/etc/webhook/config.yaml"]
         imagePullPolicy: Always
         ports:
         - containerPort: 8443
@@ -34,7 +35,12 @@ spec:
         - name: webhook-tls-certs
           mountPath: /etc/webhook/certs/
           readOnly: true
+        - name: config-volume
+          mountPath: /etc/webhook/
       volumes:
       - name: webhook-tls-certs
         secret:
-          secretName: example-webhook-tls
+          secretName: aegorov-admission-tls
+      - name: config-volume
+        configMap:
+          name: webhook-config

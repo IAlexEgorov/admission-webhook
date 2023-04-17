@@ -73,7 +73,7 @@ func main() {
 	flag.StringVar(&parameters.certFile, "tlsCertFile", "/etc/webhook/certs/tls.crt", "File containing the x509 Certificate for HTTPS.")
 	flag.StringVar(&parameters.keyFile, "tlsKeyFile", "/etc/webhook/certs/tls.key", "File containing the x509 private key to --tlsCertFile.")
 	flag.StringVar(&parameters.logLevel, "logLevel", "info", "Specify level of logging.")
-	flag.StringVar(&parameters.programConfigFile, "config-file", "sourcecode/config.yaml", "Opt for the configuration file.")
+	flag.StringVar(&parameters.programConfigFile, "config-file", "config.yaml", "Opt for the configuration file.")
 	flag.Parse()
 
 	programConfigFile.isConfigurationFileExist(&parameters.programConfigFile)
@@ -121,9 +121,9 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 	// Creating Deployment object for parsing and
 	// analyzing before creating patch data
 	// -------------------------------------------
-	var deployment v1.Deployment
+	var statefulset v1.StatefulSet
 
-	err = json.Unmarshal(admissionReviewReq.Request.Object.Raw, &deployment)
+	err = json.Unmarshal(admissionReviewReq.Request.Object.Raw, &statefulset)
 	if err != nil {
 		logger.Error().Msgf("could not unmarshal pod on admission request: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
@@ -133,7 +133,7 @@ func HandleMutate(w http.ResponseWriter, r *http.Request) {
 	// Creating of Patch for Admission Review
 	// which will be sent to API server
 	// ---------------------------------------
-	patches, err := createPatch(&deployment)
+	patches, err := createPatch(&statefulset)
 	if err != nil {
 		logger.Error().Msg(err.Error())
 	}
@@ -251,7 +251,7 @@ func selectLogLevel(logLevel *string) {
 	}
 }
 
-func createPatch(deployment *v1.Deployment) ([]patchOperation, error) {
+func createPatch(statefulset *v1.StatefulSet) ([]patchOperation, error) {
 
 	if programConfigFile.TriggerLabel == nil {
 		return nil, errors.New("TriggerLabel is nil")
@@ -260,9 +260,9 @@ func createPatch(deployment *v1.Deployment) ([]patchOperation, error) {
 	var patches []patchOperation
 
 	for labelName, labelVal := range programConfigFile.TriggerLabel {
-		for deploymentLabelName, deploymentLabelValue := range deployment.Spec.Template.ObjectMeta.Labels {
-			if deploymentLabelName == labelName {
-				if deploymentLabelValue == labelVal || labelVal == "*" {
+		for statefulsetLabelName, statefulsetLabelValue := range statefulset.Spec.Template.ObjectMeta.Labels {
+			if statefulsetLabelName == labelName {
+				if statefulsetLabelValue == labelVal || labelVal == "*" {
 					//---------------------
 					// Create patch Labels
 					//---------------------
@@ -318,7 +318,7 @@ func createPatch(deployment *v1.Deployment) ([]patchOperation, error) {
 						Name:      "wasmfilters-dir",
 						MountPath: "/var/local/lib/wasm-filters",
 					}
-					
+
 					initContainers := v12.Container{
 						Name:         "mlflow-tracking-webassembly",
 						Image:        "nexus.do.neoflex.ru/webassembly:1.0.2",
@@ -342,7 +342,7 @@ func createPatch(deployment *v1.Deployment) ([]patchOperation, error) {
 					// Add difficult patch data
 					// in the specific containers
 					//----------------------------
-					for i, container := range deployment.Spec.Template.Spec.Containers {
+					for i, container := range statefulset.Spec.Template.Spec.Containers {
 						if container.EnvFrom != nil {
 							logger.Info().Msgf("envFrom in container %v exist", container.Name)
 						} else {

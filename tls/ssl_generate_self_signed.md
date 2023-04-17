@@ -22,7 +22,7 @@ cfssl gencert \
   -ca=/tmp/ca.pem \
   -ca-key=/tmp/ca-key.pem \
   -config=./tls/ca-config.json \
-  -hostname="aegorov-admission,aegorov-admission.default.cluster.local,aegorov-admission.default.svc,localhost,127.0.0.1" \
+  -hostname="aegorov-admission.default.svc.cluster.local,aegorov-admission,aegorov-admission.default.cluster.local,aegorov-admission.default.svc,localhost,127.0.0.1" \
   -profile=default \
   ./tls/ca-csr.json | cfssljson -bare /tmp/aegorov-admission
 
@@ -41,6 +41,6 @@ EOF
 #generate CA Bundle + inject into template
 ca_pem_b64="$(openssl base64 -A <"/tmp/ca.pem")"
 
-sed -e 's@${CA_PEM_B64}@'"$ca_pem_b64"'@g' <"webhook-template.yaml" \
-    > webhook.yaml
+sed -e 's@${CA_PEM_B64}@'"$ca_pem_b64"'@g' <"mutatuion_template.yaml" \
+    > custom-webhook/templates/mutatuingWebhookConfiguration.yaml
 ```

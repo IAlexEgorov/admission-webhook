@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webhook-config
+data:
+  config.yaml: |
+    general:
+      port: 8443
+      tlsCertFile: /etc/webhook/certs/tls.crt
+      tlsKeyFile: /etc/webhook/certs/tls.key
+      logLevel: info
+    triggerLabel:
+      notebook-name: "*"
+    patchData:
+      labels:
+        type-app: "notebook"
+      annotations:
+        sidecar.istio.io/componentLogLevel: "wasm:debug"
+        sidecar.istio.io/userVolume: "[{\"name\":\"wasmfilters-dir\",\"emptyDir\": { } } ]"
+        sidecar.istio.io/userVolumeMount: "[{\"mountPath\":\"/var/local/lib/wasm-filters\",\"name\":\"wasmfilters-dir\"}]"

@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      statefulset: test
+  template:
+    metadata:
+      labels:
+        statefulset: test
+        notebook-name: test
+    spec:
+      containers:
+      - image: nginx
+        name: test
+        ports:
+        - containerPort: 8888
+          name: notebook-port
+          protocol: TCP
+  serviceName: ""
+
