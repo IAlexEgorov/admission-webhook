@@ -1,5 +1,5 @@
 apiVersion: v2
-name: custom-webhook
+name: aegorov-admission-webhook
 description: A Helm chart for Kubernetes
 type: application
 

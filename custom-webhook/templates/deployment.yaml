@@ -1,31 +1,31 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: example-webhook
-  namespace: default
+  name: aegorov-admission-webhook
+  namespace: {{ .Values.namespace }}
   labels:
-    app: example-webhook
+    app: aegorov-admission-webhook
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: example-webhook
+      app: aegorov-admission-webhook
   template:
     metadata:
       labels:
-        app: example-webhook
+        app: aegorov-admission-webhook
     spec:
       nodeSelector:
         kubernetes.io/os: linux
-      serviceAccountName: example-webhook
+      serviceAccountName: aegorov-admission-webhook
       securityContext:
         runAsNonRoot: true
         runAsUser: 1234
       containers:
       - name: server
-        image: 89109249948/webhook:config-version-label-bug-resticted-v2
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
         args: ["--config-file", "/etc/webhook/config.yaml"]
-        imagePullPolicy: Always
         ports:
         - containerPort: 8443
           name: tls

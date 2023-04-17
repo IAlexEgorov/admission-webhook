@@ -1,0 +1,109 @@
+# Default values for admission-webhook-chart.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+namespace: default
+
+image:
+  repository: 89109249948/webhook
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "config-version-label-bug-resticted-v1"
+
+configMap: |-
+  general:
+    port: 8443
+    tlsCertFile: /etc/webhook/certs/tls.crt
+    tlsKeyFile: /etc/webhook/certs/tls.key
+    logLevel: debug
+  triggerLabel:
+    notebook-name: "*"
+  patchData:
+    labels:
+      type-app: "notebook"
+    annotations:
+      sidecar.istio.io/componentLogLevel: "wasm:debug"
+      sidecar.istio.io/userVolume: "[{\"name\":\"wasmfilters-dir\",\"emptyDir\": { } } ]"
+      sidecar.istio.io/userVolumeMount: "[{\"mountPath\":\"/var/local/lib/wasm-filters\",\"name\":\"wasmfilters-dir\"}]"
+
+cert:
+  crt: |-
+    -----BEGIN CERTIFICATE-----
+    MIIENTCCAx2gAwIBAgIUUgD6UPvI3Wbjrf4Ikm4MINyCVCgwDQYJKoZIhvcNAQEL
+    BQAwTzELMAkGA1UEBhMCUlUxEDAOBgNVBAgTB0V4YW1wbGUxDzANBgNVBAcTBk1v
+    c2NvdzEQMA4GA1UEChMHRXhhbXBsZTELMAkGA1UECxMCQ0EwHhcNMjMwNDE3MTAy
+    NzAwWhcNNDMwNDEyMTAyNzAwWjBPMQswCQYDVQQGEwJSVTEQMA4GA1UECBMHRXhh
+    bXBsZTEPMA0GA1UEBxMGTW9zY293MRAwDgYDVQQKEwdFeGFtcGxlMQswCQYDVQQL
+    EwJDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALQxrg4GXLb/njuy
+    u8+o7n5t54SedWnbbD60CSrkika0i3VYJnK6SMq2Z1Dk1P/T7yVRXrm2LH6z8ocO
+    s+A5Gf7LlUIqtrRxmO/9GiK7Yn7/vrkM8fMUs3CyX2RqIIAEcn+a/7C1MJeSWULr
+    JsbwEyMc2Xcbj1RikTzHbcRXAgSB0e4fzVEiiIGJZnXw4xcDdvS0gJ6dDi5oEYVR
+    hRzouJVQCa18E/fA+6VgVmGQxkmLm/bCcIGhd2/hFMwlOxNKJ5qCZvoB8YwW0uJ0
+    lUL5V5mqa9ymxPGdDzj31OQbFyWcUntqZFUH8hO+vHYKADguJiHNrrKcKIO7adNz
+    XQ20og8CAwEAAaOCAQcwggEDMA4GA1UdDwEB/wQEAwIFoDAdBgNVHSUEFjAUBggr
+    BgEFBQcDAQYIKwYBBQUHAwIwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUa4zr7Y3Q
+    Nr4LhjA2rE0LjFTMTNAwgaQGA1UdEQSBnDCBmYIrYWVnb3Jvdi1hZG1pc3Npb24u
+    ZGVmYXVsdC5zdmMuY2x1c3Rlci5sb2NhbIIRYWVnb3Jvdi1hZG1pc3Npb26CJ2Fl
+    Z29yb3YtYWRtaXNzaW9uLmRlZmF1bHQuY2x1c3Rlci5sb2NhbIIdYWVnb3Jvdi1h
+    ZG1pc3Npb24uZGVmYXVsdC5zdmOCCWxvY2FsaG9zdIcEfwAAATANBgkqhkiG9w0B
+    AQsFAAOCAQEATzVLyDdUOxgZrgl2d/QP8E+C6KBUen76sw7hsrYgh3xoOZWL7Mea
+    IxJvMJ0GgCcjINZzXHRUn4Ai4VPvmOXpsMoeMtkQdy3edIuGu/AtReg75S1vnZsX
+    OKUuv0FsgoSYmhx2kLAHzMinLESyeaDFuyPnvBUAY0pKCKMe87RACK7NwWkiJMv3
+    5xKdjGfmbD2OMQDhjahfz9ZulPEvruVyu2jtc/cQHAkQ4BKwGygWe0IPH5a3UMnY
+    GyzTNy25+V3zDkWeiqJQvP6zh3cWBl5tCOf+boX6VU7GLXvYYJ9YX5wZ4Y+JSM9t
+    DxPsByLVfC+YCHm1xuvjB8hpOFlPyqw3Fw==
+    -----END CERTIFICATE-----
+
+  key: |-
+    -----BEGIN RSA PRIVATE KEY-----
+    MIIEpAIBAAKCAQEAtDGuDgZctv+eO7K7z6jufm3nhJ51adtsPrQJKuSKRrSLdVgm
+    crpIyrZnUOTU/9PvJVFeubYsfrPyhw6z4DkZ/suVQiq2tHGY7/0aIrtifv++uQzx
+    8xSzcLJfZGoggARyf5r/sLUwl5JZQusmxvATIxzZdxuPVGKRPMdtxFcCBIHR7h/N
+    USKIgYlmdfDjFwN29LSAnp0OLmgRhVGFHOi4lVAJrXwT98D7pWBWYZDGSYub9sJw
+    gaF3b+EUzCU7E0onmoJm+gHxjBbS4nSVQvlXmapr3KbE8Z0POPfU5BsXJZxSe2pk
+    VQfyE768dgoAOC4mIc2uspwog7tp03NdDbSiDwIDAQABAoIBAC3b4ucw2VG9dmDN
+    GR09ag0FHYHT7h/VtxOyMA8ZgNODyWZA2/Ag1ru4dkzRICBHqLo/njL3WRWZ6GRU
+    6pRrE+GToFXplvwPWRPiv08Nj4Cwx7JCyCTMJOrOipZ8p+7MsvMk2GP5iPdaSJtO
+    S10f5k7uXa4BdpXMTBhCzP3GAv5wOlC88oMB2EQkFIlBliIAA/vGHIiPFxRKgWd8
+    /kCeG0wXnsiYGNl6q4b4eziUGe1z/BqMBJEPNjMLw2G3YgL17uWeLsIASUCoSpZs
+    Qx0V5DJVrpudJoUAZntGYHIMEokpJbh7xkamOlUiJKFq4Fm+/5fOFfRj7qgGPVIV
+    L1guo/kCgYEA1ReStbYR/ogI7njW5MY+5XKfdZLMDeYUVv053A+Gv99BsLNzrrN4
+    3yHs+ePaE90AN9HZWyjAklH6jPeuKVcgsYobtxxhpgH9WCqxc2KlrsCMSG1Cj93W
+    bnui7BfpG01vA16DISchRGHAOcWKdGTl2chnHmPDFW3MO7RGMbgENuMCgYEA2HpJ
+    UvmXZz2o6tZgAglFhyaqCwVAwpcqABd9GoAEJYaw/8ByT0tB4TY7QlIabLeho19X
+    RQDnSpkayUD7zvp+Xz9d4u2G0+m6g3iPD76DfzgY1CO2A3fVvSenZbLJCUFtb/7P
+    +3LW5n683jRtaFxDgRcVhszFGvHhxodizmSfo+UCgYBm/L+hJt/HfoOijbB+XPnk
+    9uLudgY86WgHKted7bsYXJRpDDHqyz6tyL25gE/Trcn/MGK2VhnMHebT3pjDziI0
+    7CS8+PCQxQFmbSvaMmEU9mZWUsgKtBKAzyxMorm8wk3W+QSzLzA61muLAFgMLP+R
+    o/OCkoCkiK5eZKBQQzl2NQKBgQCHiMivsqUgdnJz1ZR2sedeHs8H51oMeyhItmwV
+    U2FFPXdEKPFow+2TW6judQkmWDJTXzX8dfxZsFIc/xqpFBxa9gmKMrzfoM6t0aWA
+    bf9Wf4DMES+8LCMeMt2TxsQnj1c9b4Q4IkZ6OY92b8ywMlPxVsqbg0lE/XwmGE28
+    ezOYIQKBgQCWBr2iqvsMx4PFZMzl6exy1hQgYAdRc5BStaFEqAggW37q3l5rXn5m
+    O0/9JWSQUPhi/mcBWko4hEWkwWAsqaR3bzzyPAtboVwm/jc1jbM3VA+xMbiVHXTN
+    sxph/gHtsyHwccvrx94d1YN1/oLO14KcvK3fxRpVamlzN5e32oZo2g==
+    -----END RSA PRIVATE KEY-----
+
+  caBundle: |-
+    -----BEGIN CERTIFICATE-----
+    MIIDbjCCAlagAwIBAgIUXuLamMJk9lHNF6D8jnvFqds148owDQYJKoZIhvcNAQEL
+    BQAwTzELMAkGA1UEBhMCUlUxEDAOBgNVBAgTB0V4YW1wbGUxDzANBgNVBAcTBk1v
+    c2NvdzEQMA4GA1UEChMHRXhhbXBsZTELMAkGA1UECxMCQ0EwHhcNMjMwNDE3MTAy
+    NzAwWhcNMjgwNDE1MTAyNzAwWjBPMQswCQYDVQQGEwJSVTEQMA4GA1UECBMHRXhh
+    bXBsZTEPMA0GA1UEBxMGTW9zY293MRAwDgYDVQQKEwdFeGFtcGxlMQswCQYDVQQL
+    EwJDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMiFwgePakt/uw/Q
+    9u7miZjgtogYywSLYq3zsB4DT2+KpPEim1UTTBTvsUcga99qKym1qeqwYbRktHdu
+    dl38vSHF4+INbaizmfcXkI1UWr8vaGhuBsIQwiVvoT81bjQRNMLmcfkgX3OAjBPJ
+    9Se0Jzclf4uEDwdxGLsvrbxIJXi5RlYV6pzAbQAtPNiag4hLChZjcQfEmBsZ220d
+    w106sxUfEjeb6hEeobxcLwsq9FcM2HbW2o1bkCcvnJn2HF35teJiClqAEg3hZP8F
+    8WP+3WDEGQUvxWVHRmhFjoDMDWCWT3ZFYiT/eMvsYzswn3kiKgN7ocZxW5ro7vEA
+    Dx28+ycCAwEAAaNCMEAwDgYDVR0PAQH/BAQDAgEGMA8GA1UdEwEB/wQFMAMBAf8w
+    HQYDVR0OBBYEFPt53OK7GALwtbvUV5z+5yo7fSSYMA0GCSqGSIb3DQEBCwUAA4IB
+    AQAZxppK4yxRUmlrC9CpCGs4W4y/3fMKBU4OOf7CTwVR3AW6lGTmv/N+B3MVwwu9
+    DJ2lbhbMHiHgg1GRwR/7KyOafxT4bCOPoMR0YEMCoBzGzQ4r/EJui+rFM7Df52xv
+    RR8zkNrHqy9+0uoRZrImFsjacJ8PaPGlfetyaHHEFL1MIvdxkDgLFaPeq6AiRaOp
+    wEYzuaRtlD3TmURIsubOm7pisYHMCz4WTxDswd3UONPliBU6fElg6d5Qe05rXg8a
+    S1DgA8E+4Idy+jVtvOXrbSkwtD4Xcl7EjiAy9MV9LigzSBvaQyyooqFGqLaN7X5w
+    CmeYq/3G5JUol3GrylCdzCCQ
+    -----END CERTIFICATE-----
