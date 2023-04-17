@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"github.com/rs/zerolog"
 	logger "github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
@@ -267,17 +268,26 @@ func createPatch(statefulset *v1.StatefulSet) ([]patchOperation, error) {
 					// Create patch Labels
 					//---------------------
 					if programConfigFile.PatchData.Labels != nil {
-						patches = append(patches, patchOperation{
-							Op:    "add",
-							Path:  "/spec/template/metadata/labels",
-							Value: programConfigFile.PatchData.Labels,
-						})
+						for modifiedLabelName, modifiedLabelVal := range programConfigFile.PatchData.Labels {
+							patches = append(patches, patchOperation{
+								Op:    "add",
+								Path:  fmt.Sprintf("/spec/template/metadata/labels/%s", modifiedLabelName),
+								Value: modifiedLabelVal,
+							})
+						}
 					}
 
 					//--------------------------
 					// Create patch Annotations
 					//--------------------------
 					if programConfigFile.PatchData.Annotations != nil {
+						//for modifiedAnnotName, modifiedAnnotVal := range programConfigFile.PatchData.Annotations {
+						//	patches = append(patches, patchOperation{
+						//		Op:    "add",
+						//		Path:  fmt.Sprintf("/spec/template/metadata/labels/%s", modifiedAnnotName),
+						//		Value: modifiedAnnotVal,
+						//	})
+						//}
 						patches = append(patches, patchOperation{
 							Op:    "add",
 							Path:  "/spec/template/metadata/annotations",
@@ -321,7 +331,7 @@ func createPatch(statefulset *v1.StatefulSet) ([]patchOperation, error) {
 
 					initContainers := v12.Container{
 						Name:         "mlflow-tracking-webassembly",
-						Image:        "nexus.do.neoflex.ru/webassembly:1.0.2",
+						Image:        "registry.neomsa.ru/docker-mlops/mlops/webassembly:release-1.0.0",
 						Command:      []string{"sh", "-c", "cp /plugin.wasm /var/local/lib/wasm-filters/oidc.wasm"},
 						VolumeMounts: []v12.VolumeMount{initContainerVolumeMount},
 					}

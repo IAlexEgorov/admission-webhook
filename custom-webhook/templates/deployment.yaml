@@ -23,7 +23,7 @@ spec:
         runAsUser: 1234
       containers:
       - name: server
-        image: 89109249948/webhook:config-version-v1
+        image: 89109249948/webhook:config-version-label-bug-resticted-v2
         args: ["--config-file", "/etc/webhook/config.yaml"]
         imagePullPolicy: Always
         ports:

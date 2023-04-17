@@ -8,7 +8,7 @@ data:
       port: 8443
       tlsCertFile: /etc/webhook/certs/tls.crt
       tlsKeyFile: /etc/webhook/certs/tls.key
-      logLevel: info
+      logLevel: debug
     triggerLabel:
       notebook-name: "*"
     patchData:
